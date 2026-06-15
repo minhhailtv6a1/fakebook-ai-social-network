@@ -1,0 +1,31 @@
+# Python
+venv/
+venv_ml/
+__pycache__/
+*.pyc
+
+# Environment
+.env
+.env.*
+
+# FastAPI uploads
+uploads/
+
+# Models
+*.pth
+*.pt
+*.ckpt
+
+# Next.js
+frontend/node_modules/
+frontend/.next/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+*.tsbuildinfo
