@@ -1,149 +1,463 @@
-# Intelligent Social Media Demo — Project Overview
+# Fakebook
 
-This document describes the purpose, architecture, and file/module responsibilities of the Intelligent Social Media demo project. It focuses on implemented modules and how they connect: the FastAPI backend, the ML moderation check (PhoBert-based), and the Next.js frontend.
+![Next.js](https://img.shields.io/badge/Frontend-Next.js-black)
+![TypeScript](https://img.shields.io/badge/Language-TypeScript-blue)
+![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688)
+![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791)
+![PyTorch](https://img.shields.io/badge/AI-PyTorch-ee4c2c)
 
----
+Fakebook is a university capstone social network prototype that combines a Facebook-inspired news feed with AI-assisted content moderation for Vietnamese text and uploaded images.
 
-## 1. Project Summary
+## Overview
 
-A small-scale social network demo where users can register/login, post content, and interact (like) with posts. When a user creates a post, the content is checked by a trained PhoBert-based classifier (`best_phobert_model.pth`) to decide whether the post meets moderation criteria. The system is split into two main parts:
+Fakebook demonstrates how a full-stack social media application can integrate machine learning into the posting workflow. Users can register, log in, create posts, upload images, view a news feed, and like/unlike posts. When a post is created, the backend runs text moderation with a PhoBERT-based classifier and image moderation with a DenseNet201-based violence classifier. The moderation outputs are saved with the post and displayed in the feed.
 
-- Backend: FastAPI application exposing REST endpoints for auth, posts, likes, and a ML-based moderation predictor.
-- Frontend: Next.js (app router) React UI for registration, login, feed and post creation, using client-side fetch to the backend API.
+The project focuses on two engineering areas:
 
-This is a demo academic capstone project and the ML model is used as a simple content filter during post creation.
+- **Full-stack engineering:** Next.js frontend, FastAPI backend, PostgreSQL persistence, JWT authentication, file upload, and REST APIs.
+- **AI integration:** text classification, image classification, label fusion, and user-facing moderation warnings.
 
----
+## Features
 
-## 2. High-level architecture
+| Feature                                   | Status                 |
+| ----------------------------------------- | ---------------------- |
+| User registration                         | ✅ Implemented         |
+| User login                                | ✅ Implemented         |
+| JWT authentication                        | ✅ Implemented         |
+| Current user profile endpoint             | ✅ Implemented         |
+| Create text post                          | ✅ Implemented         |
+| Upload image with post                    | ✅ Implemented         |
+| News feed                                 | ✅ Implemented         |
+| Like / unlike post                        | ✅ Implemented         |
+| Text moderation with PhoBERT              | ✅ Implemented         |
+| Image moderation with DenseNet201         | ✅ Implemented         |
+| Label fusion for final moderation label   | ✅ Implemented         |
+| Moderation labels in feed                 | ✅ Implemented         |
+| Violence image warning overlay            | ✅ Implemented         |
+| Loading skeletons and toast notifications | ✅ Implemented         |
+| Model training notebooks                  | ✅ Implemented         |
+| Manual database migration script          | ✅ Implemented         |
+| Admin dashboard                           | 🚧 Not implemented     |
+| Comments                                  | 🚧 Not implemented     |
+| Messenger                                 | 🚧 Not implemented     |
+| Search                                    | 🚧 UI placeholder only |
+| Notifications                             | 🚧 UI placeholder only |
 
-- Frontend (Next.js) communicates with Backend (FastAPI) over HTTP/JSON.
-- Backend persists users, posts, and likes in a relational DB via SQLAlchemy.
-- On post creation, the backend calls the ML predictor to obtain a moderation decision.
-- ML code is isolated in `backend/app/ml_dl/` and can be installed/run in a separate ML virtual environment (to avoid heavy ML dependencies in the main backend venv).
+## System Architecture
 
----
+```text
+User Browser
+  |
+  v
+Next.js Frontend
+  |
+  | Axios HTTP requests
+  v
+FastAPI Backend
+  |
+  | SQLAlchemy ORM
+  v
+PostgreSQL Database
 
-## 3. Backend — key folders & files (implementation-focused)
+FastAPI Post Creation Flow
+  |
+  +--> PhoBERT text moderation
+  |
+  +--> DenseNet201 image moderation, if image exists
+  |
+  +--> Label fusion
+  |
+  +--> Save post and moderation labels
+```
 
-Path: `backend/`
+### Frontend
 
-- `main.py` — Application entry point. Creates DB metadata and includes routers for auth and posts. Adds CORS middleware and serves uploaded static files from `/uploads`.
+The frontend is a Next.js App Router application. It includes:
 
-- `app/database/database.py` — SQLAlchemy engine, `SessionLocal`, and `Base`. Loads `DATABASE_URL` from `.env` and provides `get_db()` generator for dependency injection.
+- `/login` page with login and registration modal.
+- `/feed` page with a Facebook-like feed layout.
+- Axios API client with JWT bearer token injection.
+- Reusable UI helpers for avatar, toast, and skeleton loading states.
+- Moderation labels and a violence image warning overlay in the feed.
 
-- `app/models/` — SQLAlchemy models for domain objects:
-  - `models/user.py` — `User` model (id, username, email, password_hash, created_at).
-  - `models/like_model.py` — `Like` model for post interactions.
+### Backend
 
-- `app/schemas/` — Pydantic schemas for validation and response models (e.g. `user_schema.py`). Note: `orm_mode` is used to allow returning SQLAlchemy objects.
+The backend is a FastAPI application. It includes routers for:
 
-- `app/auth/`
-  - `routes.py` — Endpoints for registration (`/auth/register`), login (`/auth/login`) and `/auth/me` protected endpoint. Uses password hashing and JWT creation.
-  - `dependencies.py` — Token verification dependency (extracts `Authorization: Bearer <token>` and decodes JWT). Recommended to convert payload `sub` into a DB user lookup.
+- Authentication
+- Current user information
+- Posts
+- Likes
 
-- `app/posts/`
-  - `routes.py` — Post CRUD endpoints; on creation it calls the ML predictor to check content.
-  - `models.py` and `schemas.py` — Post model and pydantic schemas.
-  - `like_routes.py` — Endpoints for liking and unliking posts.
+The backend serves uploaded files from `/uploads` and uses SQLAlchemy for PostgreSQL persistence.
 
-- `app/ml_dl/` — ML modules (kept separate to minimize heavy deps in main venv):
-  - `sentiment_model.py` — Loader and helper for the PhoBert model. Handles multiple checkpoint formats (full model object or state_dict). Instantiates `PhoBert` architecture and loads state.
-  - `PhoBert_Model.py` — Local custom model definition using `transformers.AutoModel` and a small classifier head (Dropout + Linear layers). Defines `PhoBert(nn.Module)`.
-  - `predictor.py` — Thin wrapper that tokenizes input text and runs the `model` to return predicted class index. Used by `app/posts/routes.py`.
-  - `best_phobert_model.pth` (or `best_model.pt`) — trained checkpoint file (not included here) expected at `app/ml_dl/`.
+### Database
 
-- `requirements.txt` — Lightweight backend deps (fastapi, uvicorn, sqlalchemy, psycopg2-binary, passlib, bcrypt, python-dotenv, email-validator, etc.).
-- `ml-requirements.txt` — ML-specific packages (transformers, tokenizers, sentencepiece, and instruction to install torch separately using the official PyTorch index). This keeps heavy ML packages isolated.
+The database is PostgreSQL. SQLAlchemy models currently include:
 
----
+- `User`
+- `Post`
+- `Like`
 
-## 4. Frontend — key folders & files
+The `posts` table stores post content, optional image URL, author ID, creation time, legacy sentiment score, and moderation labels.
 
-Path: `frontend/`
+### AI Moderation Layer
 
-- `app/` (Next.js app router)
-  - `layout.tsx` — Base layout used by pages.
-  - `globals.css` — Global styling, input contrast fixes and notification CSS (fixed top-right sliding notification with `.notif` and `.notif.hide` classes).
-  - `login/page.tsx` — Client component for login: sends credentials to `/auth/login`, saves token to `localStorage`, and shows sliding notifications with the exact Vietnamese messages requested (success: "Đăng nhập thành công", error: "Email hoặc tài khoản không đúng!").
-  - `feed/page.tsx` — Client component for the protected feed; waits for client mount (`isMounted`) to avoid SSR/CSR hydration mismatch, fetches `/auth/me` with the token and shows user data or "Not signed in".
+AI logic is kept outside route handlers:
 
-- `lib/api.ts` — Thin API helper that forwards requests to the backend base URL.
-- `next.config.ts` — Next.js config. During development, `allowedDevOrigins` may need to include LAN IPs for HMR when accessing the app via network host.
+- `backend/app/ml_dl/` contains model loading and low-level prediction code.
+- `backend/app/moderation/` contains moderation wrappers, label mapping, and fusion logic.
 
----
+This separation keeps API routes focused on request handling while the moderation layer owns AI behavior.
 
-## 5. ML integration details
+## Technology Stack
 
-- ML files live under `backend/app/ml_dl/`.
-- `PhoBert_Model.PhoBert` defines the architecture built on `vinai/phobert-base` with a classifier head. It expects tokenized inputs (`input_ids`, `attention_mask`) and returns logits.
-- `sentiment_model.py` prefers to load a full model object; if checkpoint is a state_dict, it instantiates the architecture and calls `load_state_dict(..., strict=False)`.
-- `predictor.py` tokenizes input with `AutoTokenizer.from_pretrained("vinai/phobert-base")` and calls `model(**inputs)`, returning the predicted class index.
-- To avoid heavy dependencies in the backend venv, the ML stack (torch, transformers with certain versions) is installed in the separate ML venv using `ml-requirements.txt` and the recommended PyTorch installer command.
+### Frontend
 
----
+- Next.js 16
+- React 19
+- TypeScript
+- TailwindCSS 4
+- Axios
+- Lucide React
 
-## 6. How components interact when creating a post
+### Backend
 
-1. Frontend sends POST /posts with text and optional media.
-2. Backend `app.posts.routes` receives request and validates it with pydantic schemas.
-3. The route calls `app.ml_dl.predictor.predict_sentiment(text)`.
-4. `predict_sentiment` tokenizes the text and runs the model to get predicted class.
-5. Backend applies moderation logic based on prediction (accept/reject or flag), saves the post to DB if allowed, and returns response to frontend.
+- FastAPI
+- Uvicorn
+- SQLAlchemy
+- PostgreSQL
+- psycopg2
+- JWT with `python-jose`
+- Passlib + bcrypt
+- python-multipart
+- python-dotenv
 
----
+### AI / ML
 
-## 7. Run & development notes
+- PyTorch
+- TorchVision
+- HuggingFace Transformers
+- PhoBERT (`vinai/phobert-base`)
+- DenseNet201
+- Pillow
+- NumPy
+- scikit-learn
+- pandas
 
-- Backend (API):
-  - Use the lightweight backend venv for normal API work:
-    1. cd backend
-    2. python -m venv venv
-    3. .\venv\Scripts\Activate.ps1 (PowerShell) or source venv/Scripts/activate (Git Bash)
-    4. python -m pip install -r requirements.txt
-    5. python -m uvicorn main:app --reload
+## Repository Structure
 
-- ML environment (separate):
-  - Create ML venv (Python 3.11 recommended), activate it, install PyTorch using official index (CPU or CUDA), then:
-    python -m pip install -r ml-requirements.txt
-  - Ensure this ML venv is used when you run the backend service that must load the model. Alternatively, run model-serving in a separate process communicating by HTTP.
+```text
+.
+├── README.md
+├── backend/
+│   ├── main.py
+│   ├── requirements.txt
+│   ├── ml-requirements.txt
+│   ├── migrations/
+│   │   └── 20260613_add_post_moderation_labels.sql
+│   ├── scripts/
+│   │   └── add_post_columns.py
+│   ├── uploads/
+│   └── app/
+│       ├── auth/
+│       │   ├── dependencies.py
+│       │   └── routes.py
+│       ├── core/
+│       │   └── security.py
+│       ├── database/
+│       │   └── database.py
+│       ├── ml_dl/
+│       │   ├── PhoBert_Model.py
+│       │   ├── image_predictor.py
+│       │   ├── label_mapping.py
+│       │   ├── predictor.py
+│       │   ├── sentiment_model.py
+│       │   └── violence_detect_vision_model.py
+│       ├── models/
+│       │   ├── like_model.py
+│       │   └── user.py
+│       ├── moderation/
+│       │   ├── fusion.py
+│       │   ├── image_moderator.py
+│       │   ├── labels.py
+│       │   ├── service.py
+│       │   └── text_moderator.py
+│       ├── posts/
+│       │   ├── like_routes.py
+│       │   ├── models.py
+│       │   ├── routes.py
+│       │   └── schemas.py
+│       ├── schemas/
+│       │   └── user_schema.py
+│       └── users/
+│           └── routes.py
+├── frontend/
+│   ├── app/
+│   │   ├── feed/
+│   │   │   └── page.tsx
+│   │   ├── login/
+│   │   │   └── page.tsx
+│   │   ├── globals.css
+│   │   ├── layout.tsx
+│   │   └── page.tsx
+│   ├── components/
+│   │   └── ui/
+│   │       ├── Avatar.tsx
+│   │       ├── Skeleton.tsx
+│   │       └── Toast.tsx
+│   ├── lib/
+│   │   ├── api.ts
+│   │   ├── errors.ts
+│   │   └── types.ts
+│   ├── public/
+│   ├── package.json
+│   └── tsconfig.json
+└── model-training/
+    ├── language-model/
+    │   ├── create_final_sentiment_dataset.ipynb
+    │   └── training_model_for_HATE_SCAM_SPAM_Status_Sentiment.ipynb
+    └── vision-model/
+        └── training_model_for_Violence_Detection.ipynb
+```
 
-- Frontend:
-  - cd frontend
-  - npm install
-  - npm run dev
-  - If accessing the dev server via LAN IP, add that origin to `allowedDevOrigins` in `next.config.ts`.
+<!-- > Note: there is currently no `docs/` directory. -->
 
----
+## AI Content Moderation Pipeline
 
-## 8. Known issues & recommendations
+The moderation pipeline runs when an authenticated user creates a post.
 
-- The ML code may raise `ModuleNotFoundError` if the relative import path for `PhoBert_Model` is incorrect. Ensure `app/ml_dl/PhoBert_Model.py` exists and contains class `PhoBert` (present in this repo).
-- The model checkpoint format matters: if the checkpoint only contains `state_dict`, `sentiment_model.py` instantiates the architecture and loads weights; ensure `num_classes` matches training.
-- Keep heavy ML deps out of the main backend venv. Use `ml-requirements.txt` and the PyTorch wheel index to avoid build-from-source issues (tokenizers builds may require Rust if wheels are unavailable).
-- For production, implement authentication checks for protected endpoints, secure SECRET_KEY, and do not load large models in-process in a synchronous request handler — use a separate model server or async background tasks.
+```text
+User creates post
+  |
+  v
+FastAPI receives text and optional image
+  |
+  +--> Save uploaded image to backend/uploads, if present
+  |
+  +--> Run text moderation with PhoBERT
+  |
+  +--> Run image moderation with DenseNet201, if image exists
+  |
+  +--> Fuse labels using priority:
+       hate > scam > offensive > clean
+  |
+  +--> Save post, text_label, image_label, final_label
+  |
+  v
+Frontend displays moderation labels in the feed
+```
 
----
+For violent image predictions, the feed does not immediately reveal the image. It renders a blurred image with a warning and a `View Image` button. Revealing the image only affects the selected post and does not reload the page.
 
-## 9. Next steps & extension ideas
+## Moderation Labels
 
-- Convert token payload into a DB user object in `auth/dependencies.py` to provide `current_user` objects to routes.
-- Implement more granular moderation policies and multi-label outputs from the ML model.
-- Move ML inference to a dedicated service (e.g., FastAPI model server) and call it from the main API to reduce memory footprint.
-- Add pagination, media-processing pipelines, and richer reactions (comments, bookmarks).
+### Text Moderation
 
----
+The PhoBERT text classifier maps predictions to:
 
-## 10. Where to look in the codebase (quick map)
+- `clean`
+- `offensive`
+- `hate`
+- `scam`
 
-- backend/main.py — app wiring and routers
-- backend/app/database/database.py — DB engine and session
-- backend/app/models/_ and backend/app/schemas/_ — DB models & pydantic schemas
-- backend/app/auth/\* — authentication routes and dependencies
-- backend/app/posts/\* — post endpoints, schemas, like routes
-- backend/app/ml_dl/\* — ML code: `PhoBert_Model.py`, `sentiment_model.py`, `predictor.py`, model checkpoint
-- frontend/app/\* — Next.js app pages (`login`, `feed`), `globals.css` for UI styles
+The mapping is defined in `backend/app/ml_dl/label_mapping.py`.
 
----
+### Image Moderation
 
-If you want, I can also generate a shorter README for repository root, or produce a diagram (ASCII) showing interactions. Which output do you prefer next?
+The DenseNet201 image classifier maps predictions to:
+
+- `non-violence`
+- `violence`
+
+Image labels are normalized for final fusion:
+
+| Image label    | Moderation label used for fusion |
+| -------------- | -------------------------------- |
+| `non-violence` | `clean`                          |
+| `violence`     | `offensive`                      |
+
+## Installation
+
+### Prerequisites
+
+- Python 3.11+ recommended for ML dependencies
+- Node.js compatible with Next.js 16
+- PostgreSQL
+- A configured `.env` file in `backend/`
+
+### Backend Setup
+
+```powershell
+cd backend
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+Create `backend/.env`:
+
+```env
+DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/DATABASE_NAME
+SECRET_KEY=replace-with-a-secure-secret
+ALGORITHM=HS256
+```
+
+Run the backend:
+
+```powershell
+python -m uvicorn main:app --reload
+```
+
+The API runs at:
+
+```text
+http://127.0.0.1:8000
+```
+
+### Database Setup
+
+The app uses SQLAlchemy `Base.metadata.create_all()` for initial table creation.
+
+For existing databases, apply the moderation column migration:
+
+```powershell
+cd backend
+.\venv\Scripts\Activate.ps1
+python scripts\add_post_columns.py
+```
+
+Equivalent SQL:
+
+```sql
+ALTER TABLE posts
+ADD COLUMN IF NOT EXISTS text_label VARCHAR,
+ADD COLUMN IF NOT EXISTS image_label VARCHAR,
+ADD COLUMN IF NOT EXISTS final_label VARCHAR;
+```
+
+### Frontend Setup
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+The frontend runs at:
+
+```text
+http://127.0.0.1:3000
+```
+
+### Frontend API Configuration
+
+The current Axios client points to:
+
+```text
+http://127.0.0.1:8000
+```
+
+This is defined in `frontend/lib/api.ts`.
+
+## API Overview
+
+### Root
+
+| Method | Path | Description                               |
+| ------ | ---- | ----------------------------------------- |
+| `GET`  | `/`  | Health-style root response: `API running` |
+
+### Authentication
+
+| Method | Path             | Description                                     |
+| ------ | ---------------- | ----------------------------------------------- |
+| `POST` | `/auth/register` | Register a new user                             |
+| `POST` | `/auth/login`    | Login and receive JWT access token              |
+| `GET`  | `/auth/me`       | Protected route returning decoded token payload |
+
+### Users
+
+| Method | Path        | Description                                                     |
+| ------ | ----------- | --------------------------------------------------------------- |
+| `GET`  | `/users/me` | Return the current authenticated user's ID, username, and email |
+
+### Posts
+
+| Method | Path      | Description                                                                 |
+| ------ | --------- | --------------------------------------------------------------------------- |
+| `POST` | `/posts/` | Create a post with text and optional image upload; runs AI moderation       |
+| `GET`  | `/posts/` | Return authenticated user's feed data with like state and moderation labels |
+
+### Likes
+
+| Method | Path               | Description                   |
+| ------ | ------------------ | ----------------------------- |
+| `POST` | `/likes/{post_id}` | Toggle like/unlike for a post |
+
+## Database Models
+
+### User
+
+- `id`
+- `username`
+- `email`
+- `password_hash`
+- `created_at`
+
+### Post
+
+- `id`
+- `content`
+- `image_url`
+- `user_id`
+- `created_at`
+- `sentiment`
+- `text_label`
+- `image_label`
+- `final_label`
+
+### Like
+
+- `id`
+- `user_id`
+- `post_id`
+
+## Future Improvements
+
+- Admin dashboard for moderation review and label filtering.
+- Comments system.
+- Messenger or real-time chat.
+- Search implementation.
+- Notification implementation.
+- User profile pages.
+- Post edit/delete controls.
+- Alembic migrations instead of manual SQL scripts.
+- Centralized environment configuration for frontend API base URL.
+- Background or separate-service model inference for heavier AI workloads.
+- Test coverage for backend APIs, frontend flows, and moderation fusion.
+
+## Screenshots
+
+### Login
+
+Screenshot placeholder.
+
+### Feed
+
+Screenshot placeholder.
+
+### Moderation
+
+Screenshot placeholder.
+
+## Author
+
+This project was developed as a university capstone project focused on full-stack web engineering and applied AI moderation.
+
+For portfolio review, the project demonstrates:
+
+- End-to-end feature development across frontend and backend.
+- REST API design with authentication and persistence.
+- Integration of Vietnamese NLP and computer vision models into a web product.
+- Practical UX decisions for AI-assisted content moderation.
